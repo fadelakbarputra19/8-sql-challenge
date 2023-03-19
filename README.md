@@ -1,1 +1,1 @@
-# 8-sql-challenge
+# sql-challenge
