@@ -213,7 +213,7 @@ final_table as (
 )
 select * from final_table;
 
-==== BONUS ====
+--- BONUS ---
 -- Join All The Things
 -- Recreate the table with: customer_id, order_date, product_name, price, member (Y/N)
 with all_table as (
