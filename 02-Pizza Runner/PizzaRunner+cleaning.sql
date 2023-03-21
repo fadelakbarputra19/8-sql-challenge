@@ -135,4 +135,75 @@ on c.order_id = tro.order_id
 group by dayname(order_time);
 
 -- B. Runner and Customer Experience ---
-select * from runners;
+-- 1. How many runners signed up for each 1 week period? (i.e. week starts 2021-01-01)
+select week(registration_date) as on_week, count(runner_id) as sign_up
+from runners
+group by on_week;
+
+-- 2. What was the average time in minutes it took for each runner to arrive at the Pizza Runner HQ to pickup the order?
+with diff_pick_order as (
+	select tro.runner_id, c.order_id, c.customer_id, timestampdiff(minute, c.order_time, tro.pickup_time) as time_to_pick
+    from customer_orders as c
+    join temp_runner_orders as tro
+    on c.order_id = tro.order_id
+    where tro.cancellation is null
+    group by time_to_pick, tro.runner_id, c.order_id, c.customer_id
+) 
+select runner_id, avg(time_to_pick) as avg_time_to_pick
+from diff_pick_order
+group by runner_id; 
+
+-- 3. Is there any relationship between the number of pizzas and how long the order takes to prepare?
+with cte as (
+	select c.order_id, count(c.order_id) as num_of_pizza, timestampdiff(minute, c.order_time, tro.pickup_time) as time_to_pick
+    from customer_orders as c
+    join temp_runner_orders as tro
+    on c.order_id = tro.order_id
+    where tro.cancellation is null
+    group by c.order_id, time_to_pick
+)
+select num_of_pizza, avg(time_to_pick) as avg_time_to_pick_mins from cte
+group by num_of_pizza;
+
+-- 4. What was the average distance travelled for each customer?
+with cte as (
+	select c.customer_id, tro.distance_km
+	from customer_orders as c
+	join temp_runner_orders as tro
+	on c.order_id = tro.order_id
+    where tro.distance_km is not null
+)
+select customer_id, avg(distance_km) 
+from cte
+group by customer_id;
+
+-- 5. What was the difference between the longest and shortest delivery times for all orders?
+select max(duration_minutes) - min(duration_minutes) as diff_logest_shorthest
+from temp_runner_orders;
+
+-- 6. What was the average speed for each runner for each delivery and do you notice any trend for these values?
+-- a. for each runner each order
+select runner_id, order_id, (distance_km)/(duration_minutes/60) as speed_km_per_hours 
+from temp_runner_orders
+where cancellation is null;
+-- b. for each runner
+select runner_id, avg(distance_km/(duration_minutes/60)) as avg_speed
+from temp_runner_orders
+where cancellation is null
+group by runner_id;
+
+-- 7. What is the successful delivery percentage for each runner?
+select runner_id, 
+	sum(
+		case
+			when cancellation is null then 1
+			else 0
+		end) /
+	count(
+    case
+			when cancellation is null then 1
+			else 0
+		end
+    ) as percentage
+from temp_runner_orders
+group by runner_id;
