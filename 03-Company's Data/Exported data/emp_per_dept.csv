@@ -1,0 +1,19 @@
+departement_name,gender,count(e.emp_no)
+"Customer Service",M,6416
+"Customer Service",F,4206
+Development,M,23315
+Development,F,15399
+Finance,M,4667
+Finance,F,3114
+"Human Resources",M,4885
+"Human Resources",F,3201
+Marketing,M,5530
+Marketing,F,3657
+Production,M,19845
+Production,F,13235
+"Quality Management",M,5471
+"Quality Management",F,3608
+Research,M,5801
+Research,F,3736
+Sales,M,14156
+Sales,F,9435
