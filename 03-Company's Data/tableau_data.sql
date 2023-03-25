@@ -49,11 +49,11 @@ with cte as (
 )
 
 select 
-	gender, tahun, sum(is_active)
+	dept_name, gender, emp_no, from_date, to_date, tahun, sum(is_active) as active
 from 
 	cte 
-group by tahun, gender
-order by tahun;
+group by tahun, gender, dept_name, emp_no
+order by emp_no, tahun;
 
 -- 4. Rata-rata gaji employee 'M' dan 'F' pertahun pada tiap departement
 select 
