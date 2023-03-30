@@ -1,4 +1,6 @@
 -- Cleaning --
+alter table customer_orders 
+add record_id int auto_increment primary key;
 drop temporary table if exists temp_customer_orders;
 create temporary table temp_customer_orders as
 select 
@@ -10,7 +12,7 @@ select
 		case
 			when extras = '' then null
 			else extras
-        end as extras, order_time
+        end as extras, order_time, record_id
 from 
 	customer_orders;
 
@@ -87,7 +89,7 @@ select
 from 
 	customer_orders as c
 		join 
-	temp_runner_orders as tr on c.order_id = tro.order_id
+	temp_runner_orders as tro on c.order_id = tro.order_id
 where tro.cancellation is null
 group by c.pizza_id;
 
@@ -272,3 +274,131 @@ select
 from 
 	temp_runner_orders
 group by runner_id;
+
+-- C. Ingredient Optimisation
+-- Preprocessing data (please look at my python code on repo)
+drop table if exists pizza_recipes_norm;
+create table pizza_recipes_norm (
+	pizza_id int not null,
+    topping_id int not null
+);
+load data infile 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/pizza_recipes_cleaned.csv'
+into table pizza_recipes_norm
+fields terminated by ','
+enclosed by '"'
+lines terminated by '\n'
+ignore 1 rows;
+
+select * from pizza_recipes_norm;
+-- 1. What are the standard ingredients for each pizza?
+select 
+	pn.pizza_name, pt.topping_name
+from
+	pizza_names as pn
+		join
+	pizza_recipes_norm as prn on pn.pizza_id = prn.pizza_id
+		join
+	pizza_toppings as pt on pt.topping_id = prn.topping_id;
+
+-- 2. What was the most commonly added extra?
+drop table if exists extras_cleaned;
+create table extras_cleaned (
+	order_id int not null,
+    extras int,
+    record_id int not null
+);
+LOAD DATA INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/extras_cleaned.csv'
+INTO TABLE extras_cleaned
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+
+select 
+	pt.topping_name, count(ex.extras)
+from
+	extras_cleaned as ex 
+		join
+	pizza_toppings as pt on ex.extras = pt.topping_id
+group by pt.topping_name;
+
+-- 3. What was the most common exclusion?
+drop table if exists exclusions_cleaned;
+create table exclusions_cleaned (
+	order_id int not null,
+    exclusions int,
+    record_id int not null
+);
+LOAD DATA INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/exclusions_cleaned.csv'
+INTO TABLE exclusions_cleaned
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+
+select 
+	pt.topping_name, count(exc.exclusions) as amount
+from 
+	pizza_toppings as pt
+		join
+	exclusions_cleaned as exc on pt.topping_id = exc.exclusions
+group by pt.topping_name
+order by amount desc;
+
+-- 4. 
+-- Generate an order item for each record in the customers_orders table in the format of one of the following:
+-- Meat Lovers
+-- Meat Lovers - Exclude Beef
+-- Meat Lovers - Extra Bacon
+-- Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
+drop temporary table if exists resep_pizza;
+create temporary table resep_pizza as
+select 
+	pn.pizza_id, pn.topping_id, pt.topping_name 
+from 
+	pizza_recipes_norm as pn
+		join 
+	pizza_toppings as pt on pt.topping_id = pn.topping_id;
+
+with extras_cte as (
+	select ex.record_id, concat('Extra ', group_concat(r.topping_name separator',')) as record_options
+	from extras_cleaned as ex 
+	join pizza_toppings as r on ex.extras = r.topping_id
+	group by record_id
+),
+exclusions_cte as (
+	select ex.record_id, concat('Exclude ', group_concat(r.topping_name separator ' ,')) as record_options
+    from exclusions_cleaned as ex
+    join pizza_toppings as r on ex.exclusions = r.topping_id
+    group by record_id
+),
+extras_exclude as (
+	select * from extras_cte
+    union
+    select * from exclusions_cte
+)
+select tco.record_id, concat_ws(' - ', p.pizza_name, group_concat(ex.record_options separator ' - ')) as orders
+from temp_customer_orders as tco
+join pizza_names as p on p.pizza_id = tco.pizza_id
+join extras_exclude as ex on ex.record_id = tco.record_id
+group by record_id, p.pizza_name
+order by record_id;
+-- 5. What is the total quantity of each ingredient used in all delivered pizzas sorted by most frequent first?
+with cte1 as (
+	select tco.record_id, tco.pizza_id, r.topping_id, r.topping_name,
+    case
+		when topping_id in (select topping_id from resep_pizza as res where res.pizza_id = tco.pizza_id) then 1
+        else 0
+	end as jumlah,
+    case
+		when r.topping_id in (select extras from extras_cleaned as ext where ext.record_id = tco.record_id) then 1
+        when r.topping_id in (select exclusions from exclusions_cleaned as exc where exc.record_id = tco.record_id) then -1
+        else 0
+	end as ubah
+	from temp_customer_orders tco
+	cross join pizza_toppings r 
+	order by record_id, r.topping_id
+)
+select topping_name, sum(jumlah+ubah)as amount from cte1
+group by topping_name
+order by amount desc;
