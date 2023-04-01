@@ -1,6 +1,6 @@
 -- Cleaning --
-alter table customer_orders 
-add record_id int auto_increment primary key;
+-- alter table customer_orders 
+-- add record_id int auto_increment primary key;
 drop temporary table if exists temp_customer_orders;
 create temporary table temp_customer_orders as
 select 
@@ -402,3 +402,76 @@ with cte1 as (
 select topping_name, sum(jumlah+ubah)as amount from cte1
 group by topping_name
 order by amount desc;
+
+-- D. Pricing and Ratings
+-- 1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes - 
+-- how much money has Pizza Runner made so far if there are no delivery fees?
+select sum(
+	case
+		when pizza_id = 1 then 12
+        when pizza_id = 2 then 10
+        end
+) as jumlah
+from temp_customer_orders tco
+join temp_runner_orders tro on tro.order_id = tco.order_id
+where tro.cancellation is null;
+
+-- 2. What if there was an additional $1 charge for any pizza extras? Add cheese is $1 extra
+select count(ex.extras) + 138 as amount from temp_customer_orders tco
+join temp_runner_orders tro on tro.order_id = tco.order_id
+join extras_cleaned as ex on ex.order_id = tco.order_id
+where tco.extras is not null and tro.cancellation is null;
+
+-- 3. The Pizza Runner team now wants to add an additional ratings system that allows customers to rate their runner, 
+-- how would you design an additional table for this new dataset - 
+-- generate a schema for this new table and insert your own data for ratings for each successful customer order between 1 to 5.
+drop table if exists runner_ratings;
+create table runner_ratings (
+    order_id int not null,
+    ratings int
+);
+insert into runner_ratings (order_id, ratings)
+values 
+(1,5),
+(2,2),
+(3,4),
+(4,4),
+(5,3),
+(7,4),
+(8,3),
+(10,5);
+
+-- 4. Using your newly generated table - can you join all of the information together to form a table which has the following information for successful deliveries?
+-- customer_id
+-- order_id
+-- runner_id
+-- rating
+-- order_time
+-- pickup_time
+-- Time between order and pickup
+-- Delivery duration
+-- Average speed
+-- Total number of pizzas
+select tco.customer_id, r.order_id, r.ratings, tro.runner_id, tco.order_time, tro.pickup_time, timediff(tro.pickup_time, tco.order_time) as diff,
+tro.duration_minutes, round((tro.distance_km*1000 / (tro.duration_minutes*60)), 1) as avg_speed_m_per_s, count(tco.pizza_id)
+from temp_customer_orders tco
+join temp_runner_orders tro on tco.order_id = tro.order_id
+join runner_ratings r on r.order_id = tro.order_id
+group by r.order_id, tco.customer_id, r.ratings, r.ratings, tro.runner_id, tco.order_time, tro.pickup_time, diff, tro.duration_minutes, avg_speed_m_per_s
+order by tco.customer_id;
+select * from temp_customer_orders;
+
+-- 5. If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre 
+-- traveled - how much money does Pizza Runner get?
+with cte as (
+	select tco.record_id, tco.pizza_id,
+    case
+		when tco.pizza_id = 1 then 12
+        when tco.pizza_id = 2 then 10
+	end as harga_per_pizza,
+    tro.distance_km, round((tro.distance_km * 0.3),1) as biaya_pengiriman
+    from temp_customer_orders tco
+    join temp_runner_orders tro on tco.order_id = tro.order_id
+    where tro.cancellation is null
+)
+select sum(harga_per_pizza) + sum(biaya_pengiriman) as pendapatan from cte;
